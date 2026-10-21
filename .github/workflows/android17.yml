@@ -1,0 +1,88 @@
+name: android17-emulator
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: '保活分钟数（单次上限约330分钟）'
+        required: true
+        default: '120'
+
+concurrency:
+  group: android17-emu
+  cancel-in-progress: true
+
+env:
+  ANDROID_HOME: /home/runner/android-sdk
+
+jobs:
+  emu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Install Android SDK + API 37 (Android 17) image
+        run: |
+          set -e
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/ct.zip
+          unzip -q /tmp/ct.zip -d $ANDROID_HOME/cmdline-tools
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          yes | sdkmanager --licenses > /dev/null
+          IMG=$(sdkmanager --list | grep -o 'system-images;android-37;[^ |]*x86_64' | head -1)
+          if [ -z "$IMG" ]; then echo "未找到 android-37 x86_64 镜像，可用镜像如下：" && sdkmanager --list | grep 'system-images;android-3' && exit 1; fi
+          echo "选用镜像: $IMG"
+          sdkmanager "platform-tools" "emulator" "$IMG"
+          echo "SYSIMG=$IMG" >> $GITHUB_ENV
+
+      - name: Create and boot AVD (headless)
+        run: |
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+          echo no | avdmanager create avd -n a17 -k "$SYSIMG" -d pixel_7 -f
+          nohup $ANDROID_HOME/emulator/emulator -avd a17 -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -memory 4096 -cores 4 >/tmp/emu.log 2>&1 &
+          adb wait-for-device
+          for i in $(seq 1 120); do
+            B=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [ "$B" = "1" ]; then break; fi
+            sleep 5
+          done
+          echo "=== 系统版本 ==="
+          adb shell getprop ro.build.version.release
+          adb shell getprop ro.build.version.sdk
+
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          args: --hostname=gha-android17
+
+      - name: Expose adb server on tailnet
+        run: |
+          export PATH=$ANDROID_HOME/platform-tools:$PATH
+          pkill -f "adb.*server" || true
+          sleep 2
+          nohup adb -a -P 5037 nodaemon server >/tmp/adb.log 2>&1 &
+          sleep 3
+          TS_IP=$(tailscale ip -4)
+          echo "==================================================="
+          echo " Tailnet IP: $TS_IP"
+          echo " 本机接入命令:"
+          echo "   adb -H $TS_IP -P 5037 devices"
+          echo "   adb -H $TS_IP -P 5037 shell"
+          echo "   adb -H $TS_IP -P 5037 install app.apk"
+          echo "==================================================="
+          adb -H $TS_IP -P 5037 devices
+
+      - name: Keep alive
+        run: |
+          echo "模拟器保活 ${{ inputs.minutes }} 分钟，期间可从本机 adb 接管。"
+          sleep ${{ inputs.minutes }}m
