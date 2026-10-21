@@ -14,7 +14,7 @@ concurrency:
 
 env:
   ANDROID_HOME: /home/runner/android-sdk
-  ANDROID_AVD_HOME: /home/runner/.android/avd
+  ANDROID_AVD_HOME: /home/runner/.config/.android/avd
 
 jobs:
   emu:
