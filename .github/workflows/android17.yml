@@ -36,8 +36,9 @@ jobs:
           mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses > /dev/null
-          IMG=$(sdkmanager --list | grep -o 'system-images;android-37;[^ |]*x86_64' | head -1)
-          if [ -z "$IMG" ]; then echo "未找到 android-37 x86_64 镜像，可用镜像如下：" && sdkmanager --list | grep 'system-images;android-3' && exit 1; fi
+          IMG=$(sdkmanager --list | grep -oE 'system-images;android-37\.0;google_apis;x86_64' | head -1)
+          if [ -z "$IMG" ]; then IMG=$(sdkmanager --list | grep -oE 'system-images;android-37\.[0-9]+;[^ |]*x86_64' | head -1); fi
+          if [ -z "$IMG" ]; then echo "未找到 android-37 x86_64 镜像，可用镜像如下：" && sdkmanager --list | grep -E 'system-images;android-3[67]' && exit 1; fi
           echo "选用镜像: $IMG"
           sdkmanager "platform-tools" "emulator" "$IMG"
           echo "SYSIMG=$IMG" >> $GITHUB_ENV
