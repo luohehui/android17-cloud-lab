@@ -52,7 +52,7 @@ async def handle(reader, writer):
             host = socket.inet_ntoa(await reader.readexactly(4))
         elif atyp == 0x03:
             ln = (await reader.readexactly(1))[0]
-            host = (await reader.readexactly(ln)).decode("idna", "ignore")
+            host = (await reader.readexactly(ln)).decode("ascii", "ignore")
         elif atyp == 0x04:
             host = str(ipaddress.IPv6Address(await reader.readexactly(16)))
         else:
