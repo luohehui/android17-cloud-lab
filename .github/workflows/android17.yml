@@ -45,15 +45,19 @@ jobs:
 
       - name: Create and boot AVD (headless)
         run: |
+          set -x
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
-          echo no | avdmanager create avd -n a17 -k "$SYSIMG" -d pixel_7 -f
-          nohup $ANDROID_HOME/emulator/emulator -avd a17 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 4096 -cores 4 -verbose >/tmp/emu.log 2>&1 &
+          echo "HOME=$HOME  ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd -n a17 -k "$SYSIMG" -d "pixel_7" -f 2>&1
+          echo "=== avdmanager list avd ==="
+          avdmanager list avd 2>&1
+          echo "=== ls ~/.android/avd/ ==="
+          ls -la ~/.android/avd/ 2>&1 || true
+          nohup $ANDROID_HOME/emulator/emulator -avd a17 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 4096 -cores 4 >/tmp/emu.log 2>&1 &
           echo "模拟器 PID: $!"
-          # 等 adb 看到设备（最多 3 分钟）
           timeout 180 adb wait-for-device || { echo "=== adb wait 超时,模拟器日志 ==="; tail -100 /tmp/emu.log; exit 1; }
           echo "=== adb devices ==="
           adb devices
-          # 等开机完成（最多 10 分钟，每 30 秒打一次进度）
           for i in $(seq 1 20); do
             B=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             echo "[$i/20] boot_completed=$B"
