@@ -1,0 +1,54 @@
+name: tg-socks5
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: '保活分钟数（单次上限约330分钟）'
+        required: true
+        default: '330'
+
+concurrency:
+  group: tg-socks5
+  cancel-in-progress: true
+
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          args: --hostname=gha-tgsocks
+
+      - name: Verify Telegram reachability from runner
+        run: |
+          for h in 149.154.167.51:443 91.108.56.130:443 149.154.175.50:443 web.telegram.org:443; do
+            if timeout 8 bash -c "cat < /dev/null > /dev/tcp/${h%:*}/${h#*:}" 2>/dev/null; then
+              echo "OK   $h"
+            else
+              echo "FAIL $h"
+            fi
+          done
+
+      - name: Start SOCKS5 and keep alive
+        run: |
+          TS_IP=$(tailscale ip -4)
+          echo "==================================================="
+          echo " Tailnet IP : $TS_IP"
+          echo " SOCKS5     : socks5://$TS_IP:1080"
+          echo " 本机验证   : curl.exe --socks5-hostname $TS_IP:1080 -sI https://web.telegram.org"
+          echo "==================================================="
+          nohup python3 socks5.py 1080 > /tmp/socks.log 2>&1 &
+          sleep 2
+          cat /tmp/socks.log
+          # 自检：经自己代理访问 Telegram Web
+          curl -s -o /dev/null -w "self-test web.telegram.org -> %{http_code}\n" \
+            --socks5-hostname 127.0.0.1:1080 https://web.telegram.org/ || true
+          echo "保活 ${{ inputs.minutes }} 分钟"
+          sleep ${{ inputs.minutes }}m
