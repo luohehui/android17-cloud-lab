@@ -47,13 +47,20 @@ jobs:
         run: |
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
           echo no | avdmanager create avd -n a17 -k "$SYSIMG" -d pixel_7 -f
-          nohup $ANDROID_HOME/emulator/emulator -avd a17 -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -memory 4096 -cores 4 >/tmp/emu.log 2>&1 &
-          adb wait-for-device
-          for i in $(seq 1 120); do
+          nohup $ANDROID_HOME/emulator/emulator -avd a17 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 4096 -cores 4 -verbose >/tmp/emu.log 2>&1 &
+          echo "模拟器 PID: $!"
+          # 等 adb 看到设备（最多 3 分钟）
+          timeout 180 adb wait-for-device || { echo "=== adb wait 超时,模拟器日志 ==="; tail -100 /tmp/emu.log; exit 1; }
+          echo "=== adb devices ==="
+          adb devices
+          # 等开机完成（最多 10 分钟，每 30 秒打一次进度）
+          for i in $(seq 1 20); do
             B=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            echo "[$i/20] boot_completed=$B"
             if [ "$B" = "1" ]; then break; fi
-            sleep 5
+            sleep 30
           done
+          if [ "$B" != "1" ]; then echo "=== 开机超时,模拟器日志最后100行 ==="; tail -100 /tmp/emu.log; exit 1; fi
           echo "=== 系统版本 ==="
           adb shell getprop ro.build.version.release
           adb shell getprop ro.build.version.sdk
